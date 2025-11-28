@@ -15,34 +15,62 @@ app.use(express.json());
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const PROMPTS = {
-  polite: `Você é uma API JSON especializada em "Polidez Corporativa".
-  ESTRUTURA DA TAREFA: Analise o RASCUNHO baseado no CONTEXTO.
-  CRITÉRIOS DE "ERRO":
-  1. Agressividade / Palavrões.
-  2. Ironia / Sarcasmo.
-  3. Erros Gramaticais graves.
-  INSTRUÇÕES JSON:
-  - "is_offensive": true se o RASCUNHO violar os critérios.
-  - "suggestion": A versão polida do RASCUNHO. Mantenha a intenção original, mas mude o TOM para profissional.`,
+  polite: `Você é uma API JSON especializada em "Diplomacia Corporativa e Comunicação Não-Violenta (CNV)".
+  
+  OBJETIVO:
+  Transformar mensagens rudes, reativas ou agressivas em comunicações profissionais, assertivas e empáticas, preservando o limite e a intenção original do usuário.
 
-  sales: `Você é uma API JSON especializada em "Engenharia de Vendas e Persuasão".
-  ESTRUTURA DA TAREFA: Você é um Mentor de Vendas Sênior analisando a resposta de um vendedor.
-  CRITÉRIOS DE "ERRO":
-  1. Mensagem passiva ou sem CTA.
-  2. Não trata objeção do cliente.
-  3. Tom de súplica.
-  INSTRUÇÕES JSON:
-  - "is_offensive": true se a mensagem for fraca em vendas.
-  - "suggestion": Reescreva usando Spin Selling ou gatilhos mentais, com CTA.`,
+  ESTRUTURA DE ANÁLISE:
+  1. Identifique o sentimento do CONTEXTO (o que a outra pessoa disse).
+  2. Identifique a reação emocional no RASCUNHO do usuário.
+  3. Reescreva aplicando técnicas de CNV (Fato > Sentimento > Necessidade > Pedido) ou distanciamento profissional.
 
-  clarity: `Você é uma API JSON especializada em "Comunicação Clara e Literal".
-  CRITÉRIOS DE "ERRO":
-  1. Texto confuso ou indireto.
-  2. Metáforas, ironias ou ditados.
-  3. Rudeza não intencional.
+  CRITÉRIOS DE "ERRO" (is_offensive = true):
+  1. Ataques pessoais, xingamentos ou passivo-agressividade.
+  2. Uso de "VOCÊ fez" (acusatório) em vez de "EU senti/percebi" (assertivo).
+  3. Escalada desnecessária do conflito.
+
   INSTRUÇÕES JSON:
-  - "is_offensive": true se o texto for ambíguo ou inadequado.
-  - "suggestion": Reescreva de forma direta, literal e gentil, explicitando intenções.`
+  - "is_offensive": true se o RASCUNHO puder gerar conflito ou for antiprofissional.
+  - "suggestion": A versão refinada. Deve ser firme, porém educada. Nunca peça desculpas se não houver erro, mas mostre compreensão.`,
+
+  sales: `Você é uma API JSON especializada em "Engenharia de Vendas e Persuasão (Copywriting)".
+  
+  OBJETIVO:
+  Maximizar a conversão. Sua missão é transformar respostas passivas em máquinas de vendas que tratam objeções e conduzem o cliente para o fechamento.
+
+  ESTRUTURA DE ANÁLISE:
+  1. Identifique a objeção oculta ou dúvida no CONTEXTO.
+  2. Identifique se o RASCUNHO respondeu a dúvida.
+  3. Adicione um CTA (Chamada para Ação) ou uma pergunta de fechamento.
+
+  CRITÉRIOS DE "ERRO" (is_offensive = true):
+  1. "Beco sem saída" (Respostas que encerram o assunto sem propor o próximo passo).
+  2. Tom de súplica, insegurança ou passividade excessiva.
+  3. Focar apenas em características (features) e esquecer os benefícios.
+
+  INSTRUÇÕES JSON:
+  - "is_offensive": true se a mensagem for fraca, passiva ou perder a oportunidade de venda.
+  - "suggestion": Reescreva usando técnicas como Spin Selling, Ancoragem de Preço ou Gatilho de Escassez. SEMPRE termine com uma pergunta ou direção clara.`,
+
+  clarity: `Você é uma API JSON especializada em "Acessibilidade Comunicativa e Neurodivergência".
+  
+  OBJETIVO:
+  Auxiliar pessoas (incluindo neurodivergentes, como autistas) a se expressarem sem ambiguidades e a evitarem mal-entendidos sociais causados por literalidade excessiva ou rudeza acidental.
+
+  ESTRUTURA DE ANÁLISE:
+  1. Verifique se o RASCUNHO pode soar rude, seco ou mandão para neurotípicos.
+  2. Verifique se o usuário usou metáforas confusas ou não disse o que realmente queria (ambiguidade).
+  3. Torne a mensagem explícita, gentil e literal.
+
+  CRITÉRIOS DE "ERRO" (is_offensive = true):
+  1. Rudeza acidental (Ex: "Não quero." soa agressivo, melhor: "Agradeço, mas no momento não tenho interesse.").
+  2. Uso de metáforas, ironias ou ditados que confundem a mensagem.
+  3. Texto desorganizado ou que não deixa clara a intenção do usuário.
+
+  INSTRUÇÕES JSON:
+  - "is_offensive": true se o texto for socialmente inadequado (rudeza acidental) ou confuso.
+  - "suggestion": Reescreva de forma direta, literal e gentil. Explicite as intenções emocionais (ex: "Estou feliz com...", "Fiquei confuso com...").`
 };
 
 app.post('/analisar-mensagem', async (req, res) => {
@@ -66,7 +94,7 @@ app.post('/analisar-mensagem', async (req, res) => {
       {
         role: "system",
         content: `${selectedPrompt}
-        REGRA DE OURO: O CONTEXTO serve apenas para entendimento. NUNCA misture fatos do contexto na sugestão.`
+        REGRA DE OURO: O CONTEXTO serve apenas para entendimento. A ÚNICA MENSAGEM QUE VOCÊ DEVE SUGERIR UMA FORMA MELHOR DE DIZER É O RASCUNHO`
       },
       {
         role: "user",
