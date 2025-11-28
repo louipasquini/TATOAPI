@@ -70,7 +70,7 @@ app.post('/analisar-mensagem', async (req, res) => {
       },
       {
         role: "user",
-        content: `=== CONTEXTO ===\n${context || "Sem contexto."}\n=== RASCUNHO ===\n"${message}"`
+        content: `=== CONTEXTO (MENSAGENS DE OUTRAS PESSOAS - APENAS LEIA) ===\n${context || "Sem contexto."}\n=== RASCUNHO (ANALISE E CORRIJA APENAS ESTE TEXTO) ===\n"${message}"`
       }
     ],
     temperature: 0.2,
