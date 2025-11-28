@@ -15,62 +15,56 @@ app.use(express.json());
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const PROMPTS = {
-  polite: `Você é uma API JSON especializada em "Diplomacia Corporativa e Comunicação Não-Violenta (CNV)".
+  polite: `Você é uma Engine de Reescrita de Texto focada em "Diplomacia e Profissionalismo".
   
-  OBJETIVO:
-  Transformar mensagens rudes, reativas ou agressivas em comunicações profissionais, assertivas e empáticas, preservando o limite e a intenção original do usuário.
+  SUA MISSÃO:
+  O usuário escreveu um RASCUNHO (provavelmente com raiva ou pressa) em resposta a um HISTÓRICO DE CONVERSA.
+  Sua única tarefa é reescrever esse RASCUNHO para que ele atinja o mesmo objetivo, mas de forma educada, corporativa e profissional.
 
-  ESTRUTURA DE ANÁLISE:
-  1. Identifique o sentimento do CONTEXTO (o que a outra pessoa disse).
-  2. Identifique a reação emocional no RASCUNHO do usuário.
-  3. Reescreva aplicando técnicas de CNV (Fato > Sentimento > Necessidade > Pedido) ou distanciamento profissional.
+  REGRAS DE OURO:
+  1. O HISTÓRICO serve apenas para você entender o tom da conversa. NÃO RESPONDA AO HISTÓRICO.
+  2. A "suggestion" deve ser uma versão melhorada do RASCUNHO.
+  3. Se o Rascunho for "Vai se foder", e o contexto for um cliente reclamando, a sugestão deve ser "Compreendo sua frustração, mas precisamos manter o respeito profissional."
 
-  CRITÉRIOS DE "ERRO" (is_offensive = true):
-  1. Ataques pessoais, xingamentos ou passivo-agressividade.
-  2. Uso de "VOCÊ fez" (acusatório) em vez de "EU senti/percebi" (assertivo).
-  3. Escalada desnecessária do conflito.
+  JSON OUTPUT:
+  - "is_offensive": true se o rascunho original for rude, agressivo ou inadequado.
+  - "suggestion": O texto reescrito pronto para ser enviado.`,
 
-  INSTRUÇÕES JSON:
-  - "is_offensive": true se o RASCUNHO puder gerar conflito ou for antiprofissional.
-  - "suggestion": A versão refinada. Deve ser firme, porém educada. Nunca peça desculpas se não houver erro, mas mostre compreensão.`,
-
-  sales: `Você é uma API JSON especializada em "Engenharia de Vendas e Persuasão (Copywriting)".
+  sales: `Você é uma Engine de Reescrita de Texto focada em "Técnicas de Vendas e Fechamento".
   
-  OBJETIVO:
-  Maximizar a conversão. Sua missão é transformar respostas passivas em máquinas de vendas que tratam objeções e conduzem o cliente para o fechamento.
+  SUA MISSÃO:
+  O usuário escreveu um RASCUNHO fraco ou passivo para um cliente potencial (visto no HISTÓRICO).
+  Sua tarefa é reescrever esse RASCUNHO aplicando gatilhos mentais, quebra de objeção e Chamadas para Ação (CTA).
 
-  ESTRUTURA DE ANÁLISE:
-  1. Identifique a objeção oculta ou dúvida no CONTEXTO.
-  2. Identifique se o RASCUNHO respondeu a dúvida.
-  3. Adicione um CTA (Chamada para Ação) ou uma pergunta de fechamento.
+  REGRAS DE OURO:
+  1. O HISTÓRICO mostra o que o cliente perguntou.
+  2. O RASCUNHO é a resposta do vendedor. Melhore essa resposta!
+  3. Nunca deixe a conversa morrer. Sempre termine com uma pergunta ou próximo passo.
 
-  CRITÉRIOS DE "ERRO" (is_offensive = true):
-  1. "Beco sem saída" (Respostas que encerram o assunto sem propor o próximo passo).
-  2. Tom de súplica, insegurança ou passividade excessiva.
-  3. Focar apenas em características (features) e esquecer os benefícios.
+  JSON OUTPUT:
+  - "is_offensive": true se o rascunho for "mole", passivo ou sem estratégia de venda.
+  - "suggestion": O texto reescrito usando Spin Selling ou gatilhos de persuasão.`,
 
-  INSTRUÇÕES JSON:
-  - "is_offensive": true se a mensagem for fraca, passiva ou perder a oportunidade de venda.
-  - "suggestion": Reescreva usando técnicas como Spin Selling, Ancoragem de Preço ou Gatilho de Escassez. SEMPRE termine com uma pergunta ou direção clara.`,
-
-  clarity: `Você é uma API JSON especializada em "Acessibilidade Comunicativa e Neurodivergência".
+  clarity: `Você é uma Engine de Reescrita de Texto focada em "Clareza e Literalidade".
   
-  OBJETIVO:
-  Auxiliar pessoas (incluindo neurodivergentes, como autistas) a se expressarem sem ambiguidades e a evitarem mal-entendidos sociais causados por literalidade excessiva ou rudeza acidental.
+  SUA MISSÃO:
+  O usuário escreveu um RASCUNHO que pode ser ambíguo, metafórico ou acidentalmente rude.
+  Sua tarefa é traduzir esse RASCUNHO para uma linguagem direta, gentil e explícita, ideal para evitar mal-entendidos.
 
-  ESTRUTURA DE ANÁLISE:
-  1. Verifique se o RASCUNHO pode soar rude, seco ou mandão para neurotípicos.
-  2. Verifique se o usuário usou metáforas confusas ou não disse o que realmente queria (ambiguidade).
-  3. Torne a mensagem explícita, gentil e literal.
+  REGRAS DE OURO:
+  1. Analise o HISTÓRICO para entender o tópico.
+  2. Reescreva o RASCUNHO removendo ironias, indiretas ou duplos sentidos.
+  3. Explicite a emoção ou intenção por trás do texto.
 
-  CRITÉRIOS DE "ERRO" (is_offensive = true):
-  1. Rudeza acidental (Ex: "Não quero." soa agressivo, melhor: "Agradeço, mas no momento não tenho interesse.").
-  2. Uso de metáforas, ironias ou ditados que confundem a mensagem.
-  3. Texto desorganizado ou que não deixa clara a intenção do usuário.
+  JSON OUTPUT:
+  - "is_offensive": true se o rascunho for confuso, ambíguo ou soe rude sem querer.
+  - "suggestion": O texto reescrito de forma literal e gentil.`
+};
 
-  INSTRUÇÕES JSON:
-  - "is_offensive": true se o texto for socialmente inadequado (rudeza acidental) ou confuso.
-  - "suggestion": Reescreva de forma direta, literal e gentil. Explicite as intenções emocionais (ex: "Estou feliz com...", "Fiquei confuso com...").`
+const verifyUsage = async (req, res, next) => {
+  // Mantive a estrutura original caso queira voltar para middleware, 
+  // mas a rota principal abaixo usa execução paralela para velocidade.
+  next(); 
 };
 
 app.post('/analisar-mensagem', async (req, res) => {
@@ -83,22 +77,36 @@ app.post('/analisar-mensagem', async (req, res) => {
 
   const selectedPrompt = PROMPTS[mode] || PROMPTS.polite;
 
+  // 1. Dispara validação de saldo (Auth API)
   const authPromise = axios.post(`${AUTH_API_URL}/internal/validate-usage`, {}, {
     headers: { 'Authorization': token }
   });
 
+  // 2. Dispara processamento da IA (OpenAI)
+  // AQUI ESTÁ A MUDANÇA CRÍTICA NA ESTRUTURA DA MENSAGEM
   const aiPromise = openai.chat.completions.create({
     model: "gpt-4o-mini",
     response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
-        content: `${selectedPrompt}
-        REGRA DE OURO: O CONTEXTO serve apenas para entendimento. A ÚNICA MENSAGEM QUE VOCÊ DEVE SUGERIR UMA FORMA MELHOR DE DIZER É O RASCUNHO`
+        content: selectedPrompt
       },
       {
         role: "user",
-        content: `=== CONTEXTO (MENSAGENS DE OUTRAS PESSOAS - APENAS LEIA) ===\n${context || "Sem contexto."}\n=== RASCUNHO (ANALISE E CORRIJA APENAS ESTE TEXTO) ===\n"${message}"`
+        content: `[[[ INPUT DADOS ]]]
+        
+        1. HISTÓRICO DA CONVERSA (Contexto - Apenas para leitura):
+        """
+        ${context || "Nenhum contexto disponível."}
+        """
+
+        2. RASCUNHO DO USUÁRIO (Texto que DEVE ser reescrito/corrigido):
+        """
+        ${message}
+        """
+
+        TAREFA: Ignore o histórico para fins de resposta. Seu trabalho é pegar o RASCUNHO acima e reescrevê-lo.`
       }
     ],
     temperature: 0.2,
@@ -125,12 +133,14 @@ app.post('/analisar-mensagem', async (req, res) => {
     if (error.response && error.response.status) {
       return res.status(error.response.status).json(error.response.data);
     }
+    // Log silencioso para não poluir, mas útil saber que falhou
+    // console.error(error); 
     res.status(500).json({ error: 'Erro ao processar solicitação.' });
   }
 });
 
 app.get('/', (req, res) => {
-  res.send('AI Worker (Parallel Mode) está online.');
+  res.send('AI Worker (Parallel Mode v2) está online.');
 });
 
 if (process.env.NODE_ENV !== 'production') {
