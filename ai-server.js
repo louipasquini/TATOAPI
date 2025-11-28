@@ -45,77 +45,68 @@ const PROMPTS = {
   - "suggestion": Reescreva de forma direta, literal e gentil, explicitando intenções.`
 };
 
-const verifyUsage = async (req, res, next) => {
-  try {
-    const token = req.headers['authorization'];
-    
-    if (!token) return res.status(401).json({ error: 'Token não fornecido.' });
-    if (!AUTH_API_URL) return res.status(500).json({ error: 'Erro de configuração no servidor.' });
-
-    const response = await axios.post(`${AUTH_API_URL}/internal/validate-usage`, {}, {
-      headers: { 'Authorization': token }
-    });
-
-    if (response.data.allowed) {
-      req.userPlan = response.data;
-      next();
-    } else {
-      res.status(403).json({ error: response.data.error || 'Acesso negado.' });
-    }
-
-  } catch (error) {
-    if (error.response) {
-      return res.status(error.response.status).json(error.response.data);
-    }
-    return res.status(500).json({ error: 'Erro ao validar autorização.' });
-  }
-};
-
-app.post('/analisar-mensagem', verifyUsage, async (req, res) => {
+app.post('/analisar-mensagem', async (req, res) => {
   const { message, context, mode } = req.body;
-  const selectedPrompt = PROMPTS[mode] || PROMPTS.polite;
+  const token = req.headers['authorization'];
 
   if (!message) return res.status(400).json({ error: 'Mensagem não fornecida' });
+  if (!token) return res.status(401).json({ error: 'Token não fornecido.' });
+  if (!AUTH_API_URL) return res.status(500).json({ error: 'Erro de configuração no servidor.' });
+
+  const selectedPrompt = PROMPTS[mode] || PROMPTS.polite;
+
+  const authPromise = axios.post(`${AUTH_API_URL}/internal/validate-usage`, {}, {
+    headers: { 'Authorization': token }
+  });
+
+  const aiPromise = openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `${selectedPrompt}
+        REGRA DE OURO: O CONTEXTO serve apenas para entendimento. NUNCA misture fatos do contexto na sugestão.`
+      },
+      {
+        role: "user",
+        content: `=== CONTEXTO ===\n${context || "Sem contexto."}\n=== RASCUNHO ===\n"${message}"`
+      }
+    ],
+    temperature: 0.2,
+  });
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: `${selectedPrompt}
-          REGRA DE OURO: O CONTEXTO serve apenas para entendimento. NUNCA misture fatos do contexto na sugestão.`
-        },
-        {
-          role: "user",
-          content: `=== CONTEXTO ===\n${context || "Sem contexto."}\n=== RASCUNHO ===\n"${message}"`
-        }
-      ],
-      temperature: 0.2,
-    });
+    const [authResponse, aiCompletion] = await Promise.all([authPromise, aiPromise]);
 
-    const result = JSON.parse(completion.choices[0].message.content);
-    
+    if (!authResponse.data.allowed) {
+      return res.status(403).json({ error: authResponse.data.error || 'Acesso negado.' });
+    }
+
+    const result = JSON.parse(aiCompletion.choices[0].message.content);
+
     res.json({
-        ...result,
-        _meta: {
-            plan: req.userPlan.plan,
-            usage: req.userPlan.usage
-        }
+      ...result,
+      _meta: {
+        plan: authResponse.data.plan,
+        usage: authResponse.data.usage
+      }
     });
 
   } catch (error) {
-    res.status(500).json({ error: 'Erro ao processar inteligência artificial.' });
+    if (error.response && error.response.status) {
+      return res.status(error.response.status).json(error.response.data);
+    }
+    res.status(500).json({ error: 'Erro ao processar solicitação.' });
   }
 });
 
 app.get('/', (req, res) => {
-    res.send('AI Worker (GPT-4o-mini) está online.');
+  res.send('AI Worker (Parallel Mode) está online.');
 });
 
 if (process.env.NODE_ENV !== 'production') {
-    app.listen(port);
+  app.listen(port);
 }
 
 module.exports = app;
