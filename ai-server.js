@@ -1,12 +1,10 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const OpenAI = require('openai');
-const axios = require('axios');
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import OpenAI from 'openai';
 
 const app = express();
 const port = process.env.PORT || 3000;
-
 const AUTH_API_URL = process.env.AUTH_API_URL;
 
 app.use(cors());
@@ -14,6 +12,7 @@ app.use(express.json());
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// === SEUS PROMPTS ORIGINAIS E DETALHADOS (INTACTOS) ===
 const PROMPTS = {
   polite: `Você é um Assistente de Comunicação Pessoal focado em "Assertividade Empática".
   
@@ -71,13 +70,22 @@ app.post('/analisar-mensagem', async (req, res) => {
 
   const selectedPrompt = PROMPTS[mode] || PROMPTS.polite;
 
-  const authPromise = axios.post(`${AUTH_API_URL}/internal/validate-usage`, {}, {
+  // 1. REQUISIÇÃO NATIVA (Mais leve que axios)
+  const authPromise = fetch(`${AUTH_API_URL}/internal/validate-usage`, {
+    method: 'POST',
     headers: { 'Authorization': token }
+  }).then(async r => {
+      // Captura o corpo da resposta independentemente do status
+      const data = await r.json(); 
+      // Se não for ok, precisamos saber para tratar no Promise.all
+      return { ok: r.ok, status: r.status, data };
   });
 
+  // 2. OPENAI COM TRAVA DE TOKEN (Corta geração excessiva)
   const aiPromise = openai.chat.completions.create({
     model: "gpt-4o-mini",
     response_format: { type: "json_object" },
+    max_tokens: 250, // Otimização de velocidade de geração
     messages: [
       {
         role: "system",
@@ -100,14 +108,19 @@ app.post('/analisar-mensagem', async (req, res) => {
         TAREFA: Reescreva o MEU RASCUNHO mantendo a minha decisão (Sim/Não), mas com o tom da sua persona.`
       }
     ],
-    temperature: 0.3, 
+    temperature: 0.3,
   });
 
   try {
-    const [authResponse, aiCompletion] = await Promise.all([authPromise, aiPromise]);
+    // Execução paralela
+    const [authResult, aiCompletion] = await Promise.all([authPromise, aiPromise]);
 
-    if (!authResponse.data.allowed) {
-      return res.status(403).json({ error: authResponse.data.error || 'Acesso negado.' });
+    // Verificação de Auth
+    if (!authResult.ok || !authResult.data.allowed) {
+        // Se deu erro de rede ou negócio (403, 429, etc)
+        const errorMsg = authResult.data.error || 'Acesso negado.';
+        // Retorna o status correto (403, 429 ou 500)
+        return res.status(authResult.status === 200 ? 403 : authResult.status).json({ error: errorMsg });
     }
 
     const result = JSON.parse(aiCompletion.choices[0].message.content);
@@ -115,25 +128,24 @@ app.post('/analisar-mensagem', async (req, res) => {
     res.json({
       ...result,
       _meta: {
-        plan: authResponse.data.plan,
-        usage: authResponse.data.usage
+        plan: authResult.data.plan,
+        usage: authResult.data.usage
       }
     });
 
   } catch (error) {
-    if (error.response && error.response.status) {
-      return res.status(error.response.status).json(error.response.data);
-    }
+    // Tratamento de erros gerais
+    console.error(error);
     res.status(500).json({ error: 'Erro ao processar solicitação.' });
   }
 });
 
 app.get('/', (req, res) => {
-  res.send('AI Worker (Intent-Fix v4) está online.');
+  res.send('AI Worker (ESM Optimized) está online.');
 });
 
 if (process.env.NODE_ENV !== 'production') {
   app.listen(port);
 }
 
-module.exports = app;
+export default app;
