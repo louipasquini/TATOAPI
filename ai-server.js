@@ -68,80 +68,84 @@ app.post('/analisar-mensagem', async (req, res) => {
   if (!token) return res.status(401).json({ error: 'Token não fornecido.' });
   if (!AUTH_API_URL) return res.status(500).json({ error: 'Erro de configuração no servidor.' });
 
-  const selectedPrompt = PROMPTS[mode] || PROMPTS.polite;
-
-  // 1. REQUISIÇÃO NATIVA (Mais leve que axios)
-  const authPromise = fetch(`${AUTH_API_URL}/internal/validate-usage`, {
-    method: 'POST',
-    headers: { 'Authorization': token }
-  }).then(async r => {
-      // Captura o corpo da resposta independentemente do status
-      const data = await r.json(); 
-      // Se não for ok, precisamos saber para tratar no Promise.all
-      return { ok: r.ok, status: r.status, data };
-  });
-
-  // 2. OPENAI COM TRAVA DE TOKEN (Corta geração excessiva)
-  const aiPromise = openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    response_format: { type: "json_object" },
-    max_tokens: 250, // Otimização de velocidade de geração
-    messages: [
-      {
-        role: "system",
-        content: selectedPrompt
-      },
-      {
-        role: "user",
-        content: `[[[ DADOS DE ENTRADA ]]]
-        
-        1. CONTEXTO (O que falaram para mim):
-        """
-        ${context || "Nenhum contexto."}
-        """
-
-        2. MEU RASCUNHO (O que eu quero responder):
-        """
-        ${message}
-        """
-
-        TAREFA: Reescreva o MEU RASCUNHO mantendo a minha decisão (Sim/Não), mas com o tom da sua persona.`
-      }
-    ],
-    temperature: 0.3,
-  });
-
   try {
-    // Execução paralela
-    const [authResult, aiCompletion] = await Promise.all([authPromise, aiPromise]);
+    // 1. VALIDAÇÃO DE USO (SEQUENCIAL)
+    // Precisamos validar ANTES de chamar a OpenAI para garantir a segurança do plano e economizar tokens.
+    const authResponse = await fetch(`${AUTH_API_URL}/internal/validate-usage`, {
+        method: 'POST',
+        headers: { 'Authorization': token }
+    });
 
-    // Verificação de Auth
-    if (!authResult.ok || !authResult.data.allowed) {
-        // Se deu erro de rede ou negócio (403, 429, etc)
-        const errorMsg = authResult.data.error || 'Acesso negado.';
-        // Retorna o status correto (403, 429 ou 500)
-        return res.status(authResult.status === 200 ? 403 : authResult.status).json({ error: errorMsg });
+    const authData = await authResponse.json();
+
+    // Verifica erros de autenticação ou limite (403, 429, etc)
+    if (!authResponse.ok || !authData.allowed) {
+        const errorMsg = authData.error || 'Acesso negado.';
+        return res.status(authResponse.status === 200 ? 403 : authResponse.status).json({ error: errorMsg });
     }
+
+    const userPlan = authData.plan; // 'TRIAL', 'ESSENTIAL' ou 'PROFESSIONAL'
+
+    // === TRAVA DE SEGURANÇA ===
+    // Se tentar usar modo SALES sendo ESSENTIAL, bloqueia.
+    if (mode === 'sales' && userPlan === 'ESSENTIAL') {
+        return res.status(403).json({ 
+            error: "O modo Vendedor é exclusivo dos planos Trial e Profissional.",
+            is_upgrade_required: true 
+        });
+    }
+
+    // 2. SELEÇÃO DO PROMPT
+    const selectedPrompt = PROMPTS[mode] || PROMPTS.polite;
+
+    // 3. CHAMADA OPENAI (Só acontece se passar pela trava)
+    const aiCompletion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      response_format: { type: "json_object" },
+      max_tokens: 250,
+      messages: [
+        {
+          role: "system",
+          content: selectedPrompt
+        },
+        {
+          role: "user",
+          content: `[[[ DADOS DE ENTRADA ]]]
+          
+          1. CONTEXTO (O que falaram para mim):
+          """
+          ${context || "Nenhum contexto."}
+          """
+
+          2. MEU RASCUNHO (O que eu quero responder):
+          """
+          ${message}
+          """
+
+          TAREFA: Reescreva o MEU RASCUNHO mantendo a minha decisão (Sim/Não), mas com o tom da sua persona.`
+        }
+      ],
+      temperature: 0.3,
+    });
 
     const result = JSON.parse(aiCompletion.choices[0].message.content);
 
     res.json({
       ...result,
       _meta: {
-        plan: authResult.data.plan,
-        usage: authResult.data.usage
+        plan: userPlan,
+        usage: authData.usage
       }
     });
 
   } catch (error) {
-    // Tratamento de erros gerais
     console.error(error);
     res.status(500).json({ error: 'Erro ao processar solicitação.' });
   }
 });
 
 app.get('/', (req, res) => {
-  res.send('AI Worker (ESM Optimized) está online.');
+  res.send('AI Worker (Secure) está online.');
 });
 
 if (process.env.NODE_ENV !== 'production') {
